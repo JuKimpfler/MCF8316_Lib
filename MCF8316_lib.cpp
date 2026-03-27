@@ -56,6 +56,8 @@ constexpr uint32_t I2C_CLOCK_HZ   = 100000;   // 100 kHz  (Standard Mode)
 constexpr uint8_t  I2C_RETRIES    = 5;        // Anzahl NACK-Retries (lt. Datasheet)
 constexpr uint32_t RETRY_DELAY_MS = 5;        // Wartezeit zwischen Retries
 
+static bool s_motorRunning = false;
+
 // ─────────────────────────────────────────────────────────────
 //  Register-Adressen  (MEM_ADDR-Teil, 12-Bit)
 //  Vollständige Adresse: 0x000000 + Offset
@@ -422,23 +424,30 @@ static bool mcf8316Init() {
 // speed_pct: 0 = Stop, 100 = Vollgas
 static void motorSetSpeed(uint8_t speed_pct) {
   if (speed_pct > 100) speed_pct = 100;
+  const bool shouldSendWakePulse = (speed_pct > 0 && !s_motorRunning);
 
   // SPEED/WAKE-Pin braucht nach Standby einen stabilen HIGH-Pegel.
   // Reines 20-kHz-PWM kann als Wake-Signal vom Eingang nicht sicher erkannt werden.
-  if (speed_pct > 0) {
+  if (shouldSendWakePulse) {
     digitalWrite(PWM_PIN, HIGH);
-    delay(WAKE_PULSE_MS);
+    delay(WAKE_PULSE_MS);  // intentionally blocking: one-time short wake pulse at start
   }
 
   // Teensy analogWrite: 8-Bit Auflösung (0–255)
   uint32_t pwmVal = ((uint32_t)speed_pct * 255UL) / 100UL;
   analogWrite(PWM_PIN, (int)pwmVal);
-  Serial.printf("[Motor] Geschwindigkeit: %3d %%  (PWM = %3lu / 255, Wake=%lums)\n",
-                speed_pct, pwmVal, (unsigned long)WAKE_PULSE_MS);
+  if (shouldSendWakePulse) {
+    Serial.printf("[Motor] Geschwindigkeit: %3d %%  (PWM = %3lu / 255, Wake=%lums)\n",
+                  speed_pct, pwmVal, (unsigned long)WAKE_PULSE_MS);
+  } else {
+    Serial.printf("[Motor] Geschwindigkeit: %3d %%  (PWM = %3lu / 255)\n", speed_pct, pwmVal);
+  }
+  s_motorRunning = (speed_pct > 0);
 }
 
 static void motorStop() {
   analogWrite(PWM_PIN, 0);
+  s_motorRunning = false;
   Serial.println("[Motor] STOP — PWM = 0");
 }
 
