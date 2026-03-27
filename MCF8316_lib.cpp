@@ -50,6 +50,7 @@
 constexpr uint8_t  MCF_I2C_ADDR   = 0x01;    // TARGET_ID (Default = 0x01)
 constexpr uint8_t  PWM_PIN        = 33;       // Teensy 4.0 PWM-Ausgang
 constexpr uint32_t PWM_FREQ_HZ    = 20000;    // 20 kHz PWM (gut für BLDC)
+constexpr uint32_t WAKE_PULSE_MS  = 30;       // SPEED/WAKE kurz statisch HIGH zum Aufwecken
 constexpr uint32_t I2C_CLOCK_HZ   = 100000;   // 100 kHz  (Standard Mode)
                                                // Clock-Stretching deckt 100µs-Delay ab
 constexpr uint8_t  I2C_RETRIES    = 5;        // Anzahl NACK-Retries (lt. Datasheet)
@@ -421,10 +422,19 @@ static bool mcf8316Init() {
 // speed_pct: 0 = Stop, 100 = Vollgas
 static void motorSetSpeed(uint8_t speed_pct) {
   if (speed_pct > 100) speed_pct = 100;
+
+  // SPEED/WAKE-Pin braucht nach Standby einen stabilen HIGH-Pegel.
+  // Reines 20-kHz-PWM kann als Wake-Signal vom Eingang nicht sicher erkannt werden.
+  if (speed_pct > 0) {
+    digitalWrite(PWM_PIN, HIGH);
+    delay(WAKE_PULSE_MS);
+  }
+
   // Teensy analogWrite: 8-Bit Auflösung (0–255)
   uint32_t pwmVal = ((uint32_t)speed_pct * 255UL) / 100UL;
   analogWrite(PWM_PIN, (int)pwmVal);
-  Serial.printf("[Motor] Geschwindigkeit: %3d %%  (PWM = %3lu / 255)\n", speed_pct, pwmVal);
+  Serial.printf("[Motor] Geschwindigkeit: %3d %%  (PWM = %3lu / 255, Wake=%lums)\n",
+                speed_pct, pwmVal, (unsigned long)WAKE_PULSE_MS);
 }
 
 static void motorStop() {
